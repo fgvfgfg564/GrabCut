@@ -16,8 +16,12 @@ class GCEngine:
 
     def add_foreground(self, pixels):
         # to be implemented
-        return np.zeros(self.img_size, np.uint8)
+        return
 
     def add_background(self, pixels):
+        # to be implemented
+        return
+
+    def rerun(self):
         # to be implemented
         return np.zeros(self.img_size, np.uint8)
