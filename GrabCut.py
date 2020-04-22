@@ -7,22 +7,145 @@ import random
 import time
 
 
+class kmeans:
+    def __init__(self, data, dim, n, max_iter):
+        self.row = int(data.size / dim)
+        self.dim = dim
+        self.data = data.reshape(self.row, dim).copy()
+        self.n = n
+        self._init_center()
+        self.type = np.zeros(self.row, dtype=np.uint)
+        self.max_iter = max_iter
+
+    def _init_center(self):
+        index1 = np.random.choice(range(self.row), self.n, replace=False)
+        self.center = self.data[index1]
+
+    def assign_type(self):
+        for i in range(self.row):
+            self.type[i] = np.argmin(np.sum((self.data[i] - self.center) ** 2, axis=1))
+
+    def update_center(self):
+        cluster_length = np.array([np.where(self.type == i)[0].size for i in range(self.n)])
+        for i in range(self.n):
+            if cluster_length[i] > 0:
+                self.center[i] = np.sum(self.data[np.where(self.type == i)], axis=0) / cluster_length[i]
+            else:
+                t = np.argmax(cluster_length)
+                p = np.where(self.type == t)
+                pixels = self.data[p]
+                distance_center = np.sum((pixels - self.center[t]) ** 2, axis=1)
+                u = np.argmax(distance_center)
+                u = p[0][u]
+                self.type[u] = i
+                self.center[i] = self.data[u]
+
+    def run(self):
+        for i in range(self.max_iter):
+            self.assign_type()
+            self.update_center()
+
+    def output(self):
+        self.data_by_comp = np.array([self.data[np.where(self.type == i)] for i in range(self.n)])
+        return self.data_by_comp
+
+
+class GMM:
+    def __init__(self, k=5):
+        self.k = k
+        self.pi = np.zeros(k)
+        self.mu = np.zeros((k, 3))
+        self.cov = np.zeros((k, 3, 3))
+        self.cov_inv = np.zeros((k, 3, 3))
+        self.cov_det = np.zeros(k)
+        self.pixel_count = np.zeros(k)
+        self.pixel_total_count = 0
+        self._sum = np.zeros((k, 3))
+        self._prob = np.zeros((k, 3, 3))
+
+    def prob_pixel_component(self, pixel, i):
+        p = pixel - self.mu[i]
+        x = (p @ self.cov_inv[i] @ (p.reshape(-1, 1)))[0]
+        return 1 / np.sqrt(self.cov_det[i]) * np.exp(-0.5 * x)
+
+    def prob_pixel_GMM(self, pixel):
+        return sum([self.pi[i] * self.prob_pixel_component(pixel, i) for i in range(self.k)])
+
+    def most_likely_pixel_component(self, pixel):
+        a = np.array([self.prob_pixel_component(pixel, i) for i in range(self.k)])
+        return np.argmax(a)
+
+    def max_D_pixel_component(self, pixel):
+        a = np.array([self.pi[i] * self.prob_pixel_component(pixel, i) for i in range(self.k)])
+        return np.argmax(a)
+
+    def add_pixel(self, pixel, i):
+        self._sum[i] += pixel
+        self._prob[i] += pixel.reshape(-1, 1) @ pixel.reshape(1, -1)
+        self.pixel_count[i] += 1
+        self.pixel_total_count += 1
+
+    def update(self):
+        variance = 0.01
+        for i in range(self.k):
+            n = self.pixel_count[i]
+            if n == 0:
+                self.pi[i] = 0
+            else:
+                self.pi[i] = n / self.pixel_total_count
+                self.mu[i] = self._sum[i] / n
+                self.cov[i] = self._prob[i] / n - self.mu[i].reshape(-1, 1) @ self.mu[i].reshape(1, -1)
+                self.cov_det[i] = np.linalg.det(self.cov[i])
+                while self.cov_det[i] <= 0:
+                    self.cov[i] += np.diag([variance for j in range(3)])
+                    self.cov_det[i] = np.linalg.det(self.cov[i])
+                self.cov_inv[i] = np.linalg.inv(self.cov[i])
+
+    def clear(self):
+        self._sum = np.zeros((self.k, 3))
+        self._prob = np.zeros((self.k, 3, 3))
+
+
 class GCEngine:
     def __init__(self, img):
         self.img = img
         self.img_shape = img.shape
+        self.row = self.img_shape[0]
+        self.col = self.img_shape[1]
+
+        self.k = 5
+        self.BG_GMM = GMM()
+        self.FG_GMM = GMM()
+        self.component_index = np.zeros((self.row,self.col), dtype=np.uint8)
+
+        self.gamma=0
+        self.beta=0
+        self.left_W = np.zeros((self.row,self.col))
+        self.upleft_W = np.zeros((self.row,self.col))
+        self.up_W = np.zeros((self.row,self.col))
+        self.upright_W = np.zeros((self.row,self.col))
+        self._init_V()
+
+        self.defi_BG = 0
+        self.defi_FG = 1
+        self.prob_BG = 2
+        self.prob_FG = 3
+        self.mask = np.zeros((self.row,self.col), dtype=np.uint8)
+        self.alpha = np.zeros((self.row,self.col), dtype=np.uint8)
+
+        self.g=graph(0)
+
+        self.max_iter = 1
 
     def OriginalIterate(self, p1, p2):
-        self.x1, self.y1, self.x2, self.y2 = p1[0], p1[1], p2[0], p2[1]
-        self.alpha = np.zeros((self.img_shape[0], self.img_shape[1]))
-        self.alpha[self.x1:self.x2 + 1, self.y1:self.y2 + 1] = 1
-        self.init_V()
-        self.init_GMM()
-        max_iteration = 10
-        for i in range(max_iteration):
-            self.assign_k()
-            self.update_GMM()
-            self.graphcut()  # to be implemented
+        x1,y1,x2,y2=p1[0],p1[1],p2[0],p2[1]
+        self.mask[x1:x2+1,y1:y2+1]=self.prob_FG
+        self.init_with_kmeans()
+        for i in range(self.max_iter):
+            self.assign_GMM_component()
+            self.learn_GMM_parameters()
+            self.construct_graph()
+            self.estimate_segmentation()
 
         return self.alpha
 
@@ -36,182 +159,130 @@ class GCEngine:
 
     def rerun(self):
         # to be implemented
-        return np.zeros(self.img_size, np.uint8)
+        return np.zeros(self.img_shape, np.uint8)
 
-    def init_GMM(self):
-        # GMM parameters
-        self.k = np.zeros_like(self.alpha)
-        self.K = 5
-        self.co = np.zeros((2, self.K))
-        self.mu = np.zeros((2, self.K, 3))
-        self.Siginv = np.zeros((2, self.K, 3, 3))
-        self.sig = np.ones((2, self.K))
-        self.co[:, :] = 1 / (self.K)
-        self.Siginv[:, :] = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
+    def _init_V(self):
+        self.gamma = 50
+        self.cal_beta()
+        self.cal_nearby_W()
 
-        # divide object and background pixels
-        mask = np.array(self.alpha == 0)
-        A = self.img[mask]  # background pixels
-        B = self.img[~mask]  # object pixels
+    def cal_beta(self):
+        left_diff = self.img[:, 1:] - self.img[:, :-1]
+        upleft_diff = self.img[1:, 1:] - self.img[:-1, :-1]
+        up_diff = self.img[1:, :] - self.img[:-1, :]
+        upright_diff = self.img[1:, :-1] - self.img[:-1, 1:]
+        self.beta = 0
+        self.beta += np.sum(left_diff ** 2)
+        self.beta += np.sum(upleft_diff ** 2)
+        self.beta += np.sum(up_diff ** 2)
+        self.beta += np.sum(upright_diff ** 2)
+        self.beta = self.beta / (4 * self.row * self.col - 3 * self.row - 3 * self.col + 2)
+        self.beta = 1 / (2 * self.beta)
 
-        # initialize with k-means
-        index1 = np.random.choice(range(A.shape[0]), self.K, replace=False)
-        index2 = np.random.choice(range(B.shape[0]), self.K, replace=False)
-        self.mu[0] = A[index1]
-        self.mu[1] = B[index2]
-        # A_uniq=np.unique(A,axis=0)
-        # B_uniq=np.unique(B,axis=0)
-        # if A_uniq.shape[0]>self.K:
-        # index1 = np.random.choice(range(A_uniq.shape[0]), self.K, replace=False)
-        # self.mu[0] = A_uniq[index1]
-        # if B_uniq.shape[0]>self.K:
-        # index2 = np.random.choice(range(B_uniq.shape[0]), self.K, replace=False)
-        # self.mu[1] = B_uniq[index2]
+    def cal_nearby_W(self):
+        for i in range(self.row):
+            for j in range(self.col):
+                color = self.img[i, j]
+                if j >= 1:
+                    diff = color - self.img[i, j - 1]
+                    self.left_W[i, j] = self.gamma * np.exp(-self.beta * np.sum(diff ** 2))
+                if i >= 1 and j >= 1:
+                    diff = color - self.img[i - 1, j - 1]
+                    self.upleft_W[i, j] = self.gamma * np.exp(-self.beta * np.sum(diff ** 2)) / np.sqrt(2)
+                if i >= 1:
+                    diff = color - self.img[i - 1, j]
+                    self.up_W[i, j] = self.gamma * np.exp(-self.beta * np.sum(diff ** 2))
+                if i >= 1 and j < self.col - 1:
+                    diff = color - self.img[i - 1, j + 1]
+                    self.upright_W[i, j] = self.gamma * np.exp(-self.beta * np.sum(diff ** 2)) / np.sqrt(2)
 
-        # begin iteration
-        max_iteration = 10
-        for i in range(max_iteration):
-            A_group = [[] for j in range(self.K)]
-            B_group = [[] for j in range(self.K)]
+    def init_with_kmeans(self):
+        BG_index=np.logical_or(self.mask==self.defi_BG,self.mask==self.prob_BG)
+        FG_index=np.logical_or(self.mask==self.defi_FG,self.mask==self.prob_FG)
+        BG_pixels=self.img[BG_index]
+        FG_pixels=self.img[FG_index]
+        BG_KM=kmeans(BG_pixels,3,self.k,20)
+        FG_KM=kmeans(FG_pixels,3,self.k,20)
+        BG_KM.run()
+        FG_KM.run()
+        BG_by_component=BG_KM.output()
+        FG_by_component=FG_KM.output()
+        for i in range(self.k):
+            for j in BG_by_component[i]:
+                self.BG_GMM.add_pixel(j,i)
+            for j in FG_by_component[i]:
+                self.FG_GMM.add_pixel(j,i)
+        self.BG_GMM.update()
+        self.FG_GMM.update()
+        self.BG_GMM.clear()
+        self.FG_GMM.clear()
 
-            # group
-            for j in range(A.shape[0]):
-                distance = np.sum((A[j] - self.mu[0]) ** 2, axis=1)
-                type = np.argmin(distance)
-                A_group[type].append(A[j])
-            for j in range(B.shape[0]):
-                distance = np.sum((B[j] - self.mu[1]) ** 2, axis=1)
-                type = np.argmin(distance)
-                B_group[type].append(B[j])
-
-            self.update(A_group, B_group)
-
-    # A_group is a 2-dimensional list of the pixels in the background,B_group is a 2-dimensional list of the grouped pixels in the object
-    def update(self, A_group, B_group):
-        sum1 = sum([len(A_group[i]) for i in range(self.K)])
-        sum2 = sum([len(B_group[i]) for i in range(self.K)])
-        for j in range(self.K):
-            n1 = np.array(A_group[j])
-            n2 = np.array(B_group[j])
-            self.co[0][j] = len(A_group[j]) / sum1 + 1e-10
-            if n1.shape[0] != 0:
-                d1 = math.fabs(np.linalg.det(n1.T @ n1 / n1.shape[0]))
-                if d1 > 1e-4:
-                    self.mu[0][j] = np.mean(n1, axis=0)
-                    self.Siginv[0][j] = np.linalg.inv(n1.T @ n1 / n1.shape[0])
-                    self.sig[0][j] = math.sqrt(d1)
-            self.co[1][j] = len(B_group[j]) / sum2 + 1e-10
-            if n2.shape[0] != 0:
-                d2 = math.fabs(np.linalg.det(n2.T @ n2 / n2.shape[0]))
-                if d2 > 1e-4:
-                    self.mu[1][j] = np.mean(n2, axis=0)
-                    self.Siginv[1][j] = np.linalg.inv(n2.T @ n2 / n2.shape[0])
-                    self.sig[1][j] = math.sqrt(d2)
-
-    def assign_k(self):
-        for i in range(self.img_shape[0]):
-            for j in range(self.img_shape[1]):
-                if self.alpha[i, j] == 0:
-                    A = [-math.log(self.co[0, z]) + math.log(self.sig[0, z]) + (
-                                0.5 * (self.img[i, j] - self.mu[0, z]) @ self.Siginv[0, z] @ (
-                            (self.img[i, j] - self.mu[0, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                    P = np.array(A)
-                    self.k[i, j] = np.argmin(P)
+    def assign_GMM_component(self):
+        for i in range(self.row):
+            for j in range(self.col):
+                if self.mask[i,j]==self.defi_BG or self.mask[i,j]==self.prob_BG:
+                    self.component_index[i,j]=self.BG_GMM.most_likely_pixel_component(self.img[i,j])
                 else:
-                    B = [-math.log(self.co[1, z]) + math.log(self.sig[1, z]) + (
-                                0.5 * (self.img[i, j] - self.mu[1, z]) @ self.Siginv[1, z] @ (
-                            (self.img[i, j] - self.mu[1, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                    P = np.array(B)
-                    self.k[i, j] = np.argmin(P)
+                    self.component_index[i,j]=self.FG_GMM.most_likely_pixel_component(self.img[i,j])
 
-    def update_GMM(self):
-        A_group = [[] for j in range(self.K)]
-        B_group = [[] for j in range(self.K)]
-        for i in range(self.img_shape[0]):
-            for j in range(self.img_shape[1]):
-                if self.alpha[i, j] == 0:
-                    A_group[self.k[i, j].astype('int')].append(self.img[i, j])
-                else:
-                    B_group[self.k[i, j].astype('int')].append(self.img[i, j])
-        self.update(A_group, B_group)
+    def learn_GMM_parameters(self):
+        for i in range(self.k):
+            BG_index=np.logical_and(self.component_index==i,np.logical_or(self.mask==self.defi_BG,self.mask==self.prob_BG))
+            FG_index=np.logical_and(self.component_index==i,np.logical_or(self.mask==self.defi_FG,self.mask==self.prob_FG))
+            BG_pixel=self.img[BG_index]
+            FG_pixel=self.img[FG_index]
+            for j in BG_pixel:
+                self.BG_GMM.add_pixel(j,i)
+            for j in FG_pixel:
+                self.FG_GMM.add_pixel(j,i)
+        self.BG_GMM.update()
+        self.FG_GMM.update()
+        self.BG_GMM.clear()
+        self.FG_GMM.clear()
 
-    def init_V(self):
-        self.gama = 50
-        a = 0
-        dx = [-1, 0, 0, 1]
-        dy = [0, 1, -1, 0]
-        for i in range(self.img_shape[0]):
-            for j in range(self.img_shape[1]):
-                for z in range(4):
-                    nx = i + dx[z]
-                    ny = j + dy[z]
-                    if 0 <= nx < self.img_shape[0] and 0 <= ny < self.img_shape[1]:
-                        a += np.sum((self.img[i, j] - self.img[nx, ny]) ** 2)
-        a /= self.img_shape[0] * self.img_shape[1] * 4
-        if a != 0:
-            self.beta = 1 / a
-        else:
-            self.beta = 0
+    def construct_graph(self):
+        self.g=graph(self.row*self.col+2)
+        for i in range(self.row):
+            for j in range(self.col):
+                a=i*self.col+j+1
+                t=self.row*self.col+1
+                self.g.addedge(0,a,self.BG_GMM.prob_pixel_GMM(self.img[i,j]).astype(np.int8))
+                self.g.addedge(a,0,0)
+                self.g.addedge(a,t,self.FG_GMM.prob_pixel_GMM(self.img[i,j]).astype(np.int8))
+                self.g.addedge(0,a,0)
+                if j>=1:
+                    b=i*self.col+j
+                    self.g.addedge(a,b,self.left_W[i,j].astype(np.int8))
+                    self.g.addedge(b,a,self.left_W[i,j].astype(np.int8))
+                if i>=1 and j>=1:
+                    b=(i-1)*self.col+j
+                    self.g.addedge(a,b,self.upleft_W[i,j].astype(np.int8))
+                    self.g.addedge(b,a,self.upleft_W[i,j].astype(np.int8))
+                if i>=1:
+                    b=(i-1)*self.col+j+1
+                    self.g.addedge(a,b,self.up_W[i,j].astype(np.int8))
+                    self.g.addedge(b,a,self.up_W[i,j].astype(np.int8))
+                if i>=1 and j<self.col-1:
+                    b=(i-1)*self.col+j+2
+                    self.g.addedge(a,b,self.upright_W[i,j].astype(np.int8))
+                    self.g.addedge(b,a,self.upright_W[i,j].astype(np.int8))
 
-    def graphcut(self):
-        vertex_num = self.img_shape[0] * self.img_shape[1] + 2
-        g = graph(vertex_num)
-
-        dx = [-1, 0, 0, 1]
-        dy = [0, 1, -1, 0]
-        o = 0
-        for i in range(self.img_shape[0]):
-            for j in range(self.img_shape[1]):
-                A = [-math.log(self.co[0, z]) + math.log(self.sig[0, z]) + (
-                        0.5 * (self.img[i, j] - self.mu[0, z]) @ self.Siginv[0, z] @ (
-                    (self.img[i, j] - self.mu[0, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                U0 = np.array(A)
-                u0 = np.min(U0).astype('int')
-                if (u0 < o):
-                    o = u0
-                B = [-math.log(self.co[1, z]) + math.log(self.sig[1, z]) + (
-                        0.5 * (self.img[i, j] - self.mu[1, z]) @ self.Siginv[1, z] @ (
-                    (self.img[i, j] - self.mu[1, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                U1 = np.array(B)
-                u1 = np.min(U1).astype('int')
-                if (u1 < o):
-                    o = u1
-        for i in range(self.img_shape[0]):
-            for j in range(self.img_shape[1]):
-                A = [-math.log(self.co[0, z]) + math.log(self.sig[0, z]) + (
-                        0.5 * (self.img[i, j] - self.mu[0, z]) @ self.Siginv[0, z] @ (
-                    (self.img[i, j] - self.mu[0, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                U0 = np.array(A)
-                u0 = np.min(U0).astype('int')
-                g.addedge(0, i * self.img_shape[1] + j + 1, u0 - o)
-                g.addedge(i * self.img_shape[1] + j + 1, 0, 0)
-                B = [-math.log(self.co[1, z]) + math.log(self.sig[1, z]) + (
-                        0.5 * (self.img[i, j] - self.mu[1, z]) @ self.Siginv[1, z] @ (
-                    (self.img[i, j] - self.mu[1, z]).reshape(-1, 1)))[0] for z in range(self.K)]
-                U1 = np.array(B)
-                u1 = np.min(U1).astype('int')
-                g.addedge(i * self.img_shape[1] + j + 1, vertex_num - 1, u1 - o)
-                g.addedge(vertex_num - 1, i * self.img_shape[1] + j + 1, 0)
-                for z in range(4):
-                    nx = i + dx[z]
-                    ny = j + dy[z]
-                    if 0 <= nx < self.img_shape[0] and 0 <= ny < self.img_shape[1]:
-                        if self.alpha[i, j] != self.alpha[nx, ny]:
-                            v = self.gama * np.exp(-self.beta * np.sum((self.img[i, j] - self.img[nx, ny]) ** 2))
-                            g.addedge(i * self.img_shape[1] + j + 1, nx * self.img_shape[1] + ny + 1, v)
-        a = g.dinic()
-        i = g.head[0]
-        while i != -1:
-            x = (g.edges[i].to - 1) // self.img_shape[1]
-            y = (g.edges[i].to - 1) % self.img_shape[1]
-            if g.edges[i].w == 0:
-                self.alpha[x, y] = 0
+    def estimate_segmentation(self):
+        self.g.dinic()
+        e=self.g.head[0]
+        while e!=-1:
+            t=self.g.edges[e].to
+            i=(t-1)//self.col
+            j=(t-1)@self.col
+            if self.g.edges[e].w<=0:
+                if self.mask[i,j]==self.prob_FG:
+                    self.mask[i,j]=self.prob_BG
             else:
-                self.alpha[x, y] = 1
-            i = g.edges[i].nex
-        c = self.alpha
-        print(c)
-
+                if self.mask[i,j]==self.prob_BG:
+                    self.mask[i,j]=self.prob_FG
+        self.alpha=np.zeros(self.img_shape)
+        FG_index=np.logical_or(self.mask==self.prob_FG,self.mask==self.defi_FG)
+        self.alpha[FG_index]=1
 
 class edge:
     def __init__(self, a, b, c):
@@ -271,5 +342,7 @@ class graph:
         while self.bfs():
             self.flow += self.dfs(0, 100000000000000)
         return self.flow
+
+
 
 
