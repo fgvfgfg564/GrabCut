@@ -11,7 +11,7 @@ class kmeans:
     def __init__(self, data, dim, n, max_iter):
         self.row = int(data.size / dim)
         self.dim = dim
-        self.data = data.reshape(self.row, dim).copy()
+        self.data = data.reshape(self.row, dim).copy().astype(np.float)
         self.n = n
         self._init_center()
         self.type = np.zeros(self.row, dtype=np.uint)
@@ -102,13 +102,15 @@ class GMM:
                 self.cov_inv[i] = np.linalg.inv(self.cov[i])
 
     def clear(self):
-        self._sum = np.zeros((self.k, 3))
-        self._prob = np.zeros((self.k, 3, 3))
+        self._sum[:,:] = 0
+        self._prob[:,:,:] = 0
+        self.pixel_count[:]=0
+        self.pixel_total_count=0
 
 
 class GCEngine:
     def __init__(self, img):
-        self.img = img
+        self.img = img.astype(np.float)
         self.img_shape = img.shape
         self.row = self.img_shape[0]
         self.col = self.img_shape[1]
@@ -242,14 +244,20 @@ class GCEngine:
 
     def construct_graph(self):
         self.g=graph(self.row*self.col+2)
+        self.b=np.zeros((self.row,self.col))
+        self.f=np.zeros((self.row,self.col))
         for i in range(self.row):
             for j in range(self.col):
                 a=i*self.col+j+1
                 t=self.row*self.col+1
-                self.g.addedge(0,a,self.BG_GMM.prob_pixel_GMM(self.img[i,j]).astype(np.int8))
+                w1=-np.log(self.BG_GMM.prob_pixel_GMM(self.img[i,j])).astype(np.int16)
+                self.b[i,j]=w1
+                self.g.addedge(0,a,w1)
                 self.g.addedge(a,0,0)
-                self.g.addedge(a,t,self.FG_GMM.prob_pixel_GMM(self.img[i,j]).astype(np.int8))
-                self.g.addedge(0,a,0)
+                w2=-np.log(self.FG_GMM.prob_pixel_GMM(self.img[i,j])).astype(np.int16)
+                self.f[i,j]=w2
+                self.g.addedge(a,t,w2)
+                self.g.addedge(t,a,0)
                 if j>=1:
                     b=i*self.col+j
                     self.g.addedge(a,b,self.left_W[i,j].astype(np.int8))
@@ -280,6 +288,7 @@ class GCEngine:
             else:
                 if self.mask[i,j]==self.prob_BG:
                     self.mask[i,j]=self.prob_FG
+            e=self.g.edges[e].nex
         self.alpha=np.zeros(self.img_shape)
         FG_index=np.logical_or(self.mask==self.prob_FG,self.mask==self.defi_FG)
         self.alpha[FG_index]=1
@@ -327,7 +336,7 @@ class graph:
         c_e = self.head[u]
         while c_e != -1 and limit > 0:
             _to = self.edges[c_e].to
-            if self.dis[_to] == self.dis[u] + 1 and self.edges[c_e].w > 0:
+            if self.dis[_to] == self.dis[u] + 1 and self.edges[c_e].w > 0 and limit > 0:
                 flow2 = self.dfs(_to, min(limit, self.edges[c_e].w))
                 flow1 += flow2
                 self.edges[c_e].w -= flow2
@@ -342,7 +351,4 @@ class graph:
         while self.bfs():
             self.flow += self.dfs(0, 100000000000000)
         return self.flow
-
-
-
 
