@@ -73,7 +73,7 @@ class ImageProcessor:
                               min(self.first_point[1], self.second_point[1]))
                         sp = (max(self.first_point[0], self.second_point[0]),
                               max(self.first_point[1], self.second_point[1]))
-                        self.mask = self.engine.original_iterate(fp, sp)
+                        self.mask = self.engine.OriginalIterate(fp, sp)
                         return
 
     def line_drawer(self, event, x, y, flags, param):
@@ -88,7 +88,8 @@ class ImageProcessor:
                 cv2.circle(self.b, (x, y), 5, 1, -1)
 
     def modify(self):
-        self.masked_image = np.where(self.mask, self.image, self.image // 4 * 3 + self.bottom_image // 4)
+        print(self.mask)
+        self.masked_image = np.where(self.mask, self.image, self.image // 4 * 2 + self.bottom_image // 4 * 2)
         self.new_image = self.masked_image.copy()
         self.f = np.zeros(self.image.shape[:2], np.uint8)
         self.b = np.zeros(self.image.shape[:2], np.uint8)
@@ -126,8 +127,6 @@ def main():
     except AttributeError:
         raise ImportError("Not a valid image")
 
-    print(type(image))
-    print(np.asarray(image, dtype=np.uint8))
     ip = ImageProcessor(image)
     ip.original_iteration()
     print("Press F to mark foreground pixel, B to mark background pixel")

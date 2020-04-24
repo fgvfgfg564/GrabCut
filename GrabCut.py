@@ -102,10 +102,10 @@ class GMM:
                 self.cov_inv[i] = np.linalg.inv(self.cov[i])
 
     def clear(self):
-        self._sum[:,:] = 0
-        self._prob[:,:,:] = 0
-        self.pixel_count[:]=0
-        self.pixel_total_count=0
+        self._sum[:, :] = 0
+        self._prob[:, :, :] = 0
+        self.pixel_count[:] = 0
+        self.pixel_total_count = 0
 
 
 class GCEngine:
@@ -118,30 +118,30 @@ class GCEngine:
         self.k = 5
         self.BG_GMM = GMM()
         self.FG_GMM = GMM()
-        self.component_index = np.zeros((self.row,self.col), dtype=np.uint8)
+        self.component_index = np.zeros((self.row, self.col), dtype=np.uint8)
 
-        self.gamma=0
-        self.beta=0
-        self.left_W = np.zeros((self.row,self.col))
-        self.upleft_W = np.zeros((self.row,self.col))
-        self.up_W = np.zeros((self.row,self.col))
-        self.upright_W = np.zeros((self.row,self.col))
+        self.gamma = 0
+        self.beta = 0
+        self.left_W = np.zeros((self.row, self.col))
+        self.upleft_W = np.zeros((self.row, self.col))
+        self.up_W = np.zeros((self.row, self.col))
+        self.upright_W = np.zeros((self.row, self.col))
         self._init_V()
 
         self.defi_BG = 0
         self.defi_FG = 1
         self.prob_BG = 2
         self.prob_FG = 3
-        self.mask = np.zeros((self.row,self.col), dtype=np.uint8)
-        self.alpha = np.zeros((self.row,self.col), dtype=np.uint8)
+        self.mask = np.zeros((self.row, self.col), dtype=np.uint8)
+        self.alpha = np.zeros((self.row, self.col), dtype=np.uint8)
 
-        self.g=graph(0)
+        self.g = graph(0)
 
         self.max_iter = 1
 
     def OriginalIterate(self, p1, p2):
-        x1,y1,x2,y2=p1[0],p1[1],p2[0],p2[1]
-        self.mask[x1:x2+1,y1:y2+1]=self.prob_FG
+        x1, y1, x2, y2 = p1[0], p1[1], p2[0], p2[1]
+        self.mask[x1:x2 + 1, y1:y2 + 1] = self.prob_FG
         self.init_with_kmeans()
         for i in range(self.max_iter):
             self.assign_GMM_component()
@@ -199,21 +199,21 @@ class GCEngine:
                     self.upright_W[i, j] = self.gamma * np.exp(-self.beta * np.sum(diff ** 2)) / np.sqrt(2)
 
     def init_with_kmeans(self):
-        BG_index=np.logical_or(self.mask==self.defi_BG,self.mask==self.prob_BG)
-        FG_index=np.logical_or(self.mask==self.defi_FG,self.mask==self.prob_FG)
-        BG_pixels=self.img[BG_index]
-        FG_pixels=self.img[FG_index]
-        BG_KM=kmeans(BG_pixels,3,self.k,20)
-        FG_KM=kmeans(FG_pixels,3,self.k,20)
+        BG_index = np.logical_or(self.mask == self.defi_BG, self.mask == self.prob_BG)
+        FG_index = np.logical_or(self.mask == self.defi_FG, self.mask == self.prob_FG)
+        BG_pixels = self.img[BG_index]
+        FG_pixels = self.img[FG_index]
+        BG_KM = kmeans(BG_pixels, 3, self.k, 20)
+        FG_KM = kmeans(FG_pixels, 3, self.k, 20)
         BG_KM.run()
         FG_KM.run()
-        BG_by_component=BG_KM.output()
-        FG_by_component=FG_KM.output()
+        BG_by_component = BG_KM.output()
+        FG_by_component = FG_KM.output()
         for i in range(self.k):
             for j in BG_by_component[i]:
-                self.BG_GMM.add_pixel(j,i)
+                self.BG_GMM.add_pixel(j, i)
             for j in FG_by_component[i]:
-                self.FG_GMM.add_pixel(j,i)
+                self.FG_GMM.add_pixel(j, i)
         self.BG_GMM.update()
         self.FG_GMM.update()
         self.BG_GMM.clear()
@@ -222,76 +222,79 @@ class GCEngine:
     def assign_GMM_component(self):
         for i in range(self.row):
             for j in range(self.col):
-                if self.mask[i,j]==self.defi_BG or self.mask[i,j]==self.prob_BG:
-                    self.component_index[i,j]=self.BG_GMM.most_likely_pixel_component(self.img[i,j])
+                if self.mask[i, j] == self.defi_BG or self.mask[i, j] == self.prob_BG:
+                    self.component_index[i, j] = self.BG_GMM.most_likely_pixel_component(self.img[i, j])
                 else:
-                    self.component_index[i,j]=self.FG_GMM.most_likely_pixel_component(self.img[i,j])
+                    self.component_index[i, j] = self.FG_GMM.most_likely_pixel_component(self.img[i, j])
 
     def learn_GMM_parameters(self):
         for i in range(self.k):
-            BG_index=np.logical_and(self.component_index==i,np.logical_or(self.mask==self.defi_BG,self.mask==self.prob_BG))
-            FG_index=np.logical_and(self.component_index==i,np.logical_or(self.mask==self.defi_FG,self.mask==self.prob_FG))
-            BG_pixel=self.img[BG_index]
-            FG_pixel=self.img[FG_index]
+            BG_index = np.logical_and(self.component_index == i,
+                                      np.logical_or(self.mask == self.defi_BG, self.mask == self.prob_BG))
+            FG_index = np.logical_and(self.component_index == i,
+                                      np.logical_or(self.mask == self.defi_FG, self.mask == self.prob_FG))
+            BG_pixel = self.img[BG_index]
+            FG_pixel = self.img[FG_index]
             for j in BG_pixel:
-                self.BG_GMM.add_pixel(j,i)
+                self.BG_GMM.add_pixel(j, i)
             for j in FG_pixel:
-                self.FG_GMM.add_pixel(j,i)
+                self.FG_GMM.add_pixel(j, i)
         self.BG_GMM.update()
         self.FG_GMM.update()
         self.BG_GMM.clear()
         self.FG_GMM.clear()
 
     def construct_graph(self):
-        self.g=graph(self.row*self.col+2)
-        self.b=np.zeros((self.row,self.col))
-        self.f=np.zeros((self.row,self.col))
+        self.g = graph(self.row * self.col + 2)
+        self.b = np.zeros((self.row, self.col))
+        self.f = np.zeros((self.row, self.col))
         for i in range(self.row):
             for j in range(self.col):
-                a=i*self.col+j+1
-                t=self.row*self.col+1
-                w1=-np.log(self.BG_GMM.prob_pixel_GMM(self.img[i,j])).astype(np.int16)
-                self.b[i,j]=w1
-                self.g.addedge(0,a,w1)
-                self.g.addedge(a,0,0)
-                w2=-np.log(self.FG_GMM.prob_pixel_GMM(self.img[i,j])).astype(np.int16)
-                self.f[i,j]=w2
-                self.g.addedge(a,t,w2)
-                self.g.addedge(t,a,0)
-                if j>=1:
-                    b=i*self.col+j
-                    self.g.addedge(a,b,self.left_W[i,j].astype(np.int8))
-                    self.g.addedge(b,a,self.left_W[i,j].astype(np.int8))
-                if i>=1 and j>=1:
-                    b=(i-1)*self.col+j
-                    self.g.addedge(a,b,self.upleft_W[i,j].astype(np.int8))
-                    self.g.addedge(b,a,self.upleft_W[i,j].astype(np.int8))
-                if i>=1:
-                    b=(i-1)*self.col+j+1
-                    self.g.addedge(a,b,self.up_W[i,j].astype(np.int8))
-                    self.g.addedge(b,a,self.up_W[i,j].astype(np.int8))
-                if i>=1 and j<self.col-1:
-                    b=(i-1)*self.col+j+2
-                    self.g.addedge(a,b,self.upright_W[i,j].astype(np.int8))
-                    self.g.addedge(b,a,self.upright_W[i,j].astype(np.int8))
+                a = i * self.col + j + 1
+                t = self.row * self.col + 1
+                w1 = -np.log(self.BG_GMM.prob_pixel_GMM(self.img[i, j])).astype(np.int16)
+                self.b[i, j] = w1
+                self.g.addedge(0, a, w1)
+                self.g.addedge(a, 0, 0)
+                w2 = -np.log(self.FG_GMM.prob_pixel_GMM(self.img[i, j])).astype(np.int16)
+                self.f[i, j] = w2
+                self.g.addedge(a, t, w2)
+                self.g.addedge(t, a, 0)
+                if j >= 1:
+                    b = i * self.col + j
+                    self.g.addedge(a, b, self.left_W[i, j].astype(np.int8))
+                    self.g.addedge(b, a, self.left_W[i, j].astype(np.int8))
+                if i >= 1 and j >= 1:
+                    b = (i - 1) * self.col + j
+                    self.g.addedge(a, b, self.upleft_W[i, j].astype(np.int8))
+                    self.g.addedge(b, a, self.upleft_W[i, j].astype(np.int8))
+                if i >= 1:
+                    b = (i - 1) * self.col + j + 1
+                    self.g.addedge(a, b, self.up_W[i, j].astype(np.int8))
+                    self.g.addedge(b, a, self.up_W[i, j].astype(np.int8))
+                if i >= 1 and j < self.col - 1:
+                    b = (i - 1) * self.col + j + 2
+                    self.g.addedge(a, b, self.upright_W[i, j].astype(np.int8))
+                    self.g.addedge(b, a, self.upright_W[i, j].astype(np.int8))
 
     def estimate_segmentation(self):
         self.g.dinic()
-        e=self.g.head[0]
-        while e!=-1:
-            t=self.g.edges[e].to
-            i=(t-1)//self.col
-            j=(t-1)@self.col
-            if self.g.edges[e].w<=0:
-                if self.mask[i,j]==self.prob_FG:
-                    self.mask[i,j]=self.prob_BG
+        e = self.g.head[0]
+        while e != -1:
+            t = self.g.edges[e].to
+            i = (t - 1) // self.col
+            j = (t - 1) % self.col
+            if self.g.edges[e].w <= 0:
+                if self.mask[i, j] == self.prob_FG:
+                    self.mask[i, j] = self.prob_BG
             else:
-                if self.mask[i,j]==self.prob_BG:
-                    self.mask[i,j]=self.prob_FG
-            e=self.g.edges[e].nex
-        self.alpha=np.zeros(self.img_shape)
-        FG_index=np.logical_or(self.mask==self.prob_FG,self.mask==self.defi_FG)
-        self.alpha[FG_index]=1
+                if self.mask[i, j] == self.prob_BG:
+                    self.mask[i, j] = self.prob_FG
+            e = self.g.edges[e].nex
+        self.alpha = np.zeros(self.img_shape)
+        FG_index = np.logical_or(self.mask == self.prob_FG, self.mask == self.defi_FG)
+        self.alpha[FG_index] = 1
+
 
 class edge:
     def __init__(self, a, b, c):
@@ -304,13 +307,16 @@ class graph:
     def __init__(self, vertex_num):
         self.head = [-1 for i in range(vertex_num)]
         self.dis = [-1 for i in range(vertex_num)]
+        self.cur = [0 for i in range(vertex_num)]
         self.edges = []
         self.n = vertex_num
         self.flow = 0
+        self.m = 0
 
     def addedge(self, source, destination, weight):
         e = edge(destination, weight, self.head[source])
-        self.head[source] = len(self.edges)
+        self.head[source] = self.m
+        self.m += 1
         self.edges.append(e)
 
     def bfs(self):
@@ -333,7 +339,7 @@ class graph:
         if u == self.n - 1:
             return limit
         flow1 = 0
-        c_e = self.head[u]
+        c_e = self.cur[u]
         while c_e != -1 and limit > 0:
             _to = self.edges[c_e].to
             if self.dis[_to] == self.dis[u] + 1 and self.edges[c_e].w > 0 and limit > 0:
@@ -341,14 +347,19 @@ class graph:
                 flow1 += flow2
                 self.edges[c_e].w -= flow2
                 self.edges[c_e ^ 1].w += flow2
+                if self.edges[c_e].w > 0:
+                    self.cur[u] = c_e
                 limit -= flow2
             c_e = self.edges[c_e].nex
+        if flow1 == 0:
+            self.dis[u] = -1
         return flow1
 
     # 默认第一个点是源点，最后一个点是汇点
     def dinic(self):
         self.flow = 0
+        cnt = 0
         while self.bfs():
+            self.cur = self.head.copy()
             self.flow += self.dfs(0, 100000000000000)
         return self.flow
-
