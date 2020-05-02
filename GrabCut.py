@@ -1,17 +1,13 @@
 import cv2
 import numpy as np
-import math
-import queue
-# import matplotlib.pyplot as plt
-import random
-import time
+import ctypes
 
 
 class kmeans:
     def __init__(self, data, dim, n, max_iter):
         self.row = int(data.size / dim)
         self.dim = dim
-        self.data = data.reshape(self.row, dim).copy().astype(np.float)
+        self.data = data.reshape(self.row, dim).copy().astype(np.double)
         self.n = n
         self._init_center()
         self.type = np.zeros(self.row, dtype=np.uint)
@@ -107,10 +103,391 @@ class GMM:
         self.pixel_count[:] = 0
         self.pixel_total_count = 0
 
+class Pointer:
+    def __init__(self, var):
+        self.id = id(var)
+
+    def get_value(self):
+        return ctypes.cast(self.id, ctypes.py_object).value
+
+
+class Vertex:
+    def __init__(self):
+        self.next = 0  # next vertex
+        self.parent = 0  # edge to parent
+        self.first = 0  # first edge
+        self.ts = 0  # to source
+        self.dist = 0  # dist to root
+        self.weight = 0
+        self.t = 0  # tree
+
+
+class Edge:
+    def __init__(self):
+        self.dst = 0
+        self.next = 0
+        self.weight = 0.0
+
+
+class GCGraph:
+    def __init__(self, vertex_count, edge_count):
+        self.vertex_count = vertex_count
+        self.edge_count = edge_count
+        self.vertexs = []
+        self.edges = []
+        self.flow = 0
+
+    def add_vertex(self):
+        v = Vertex()
+        self.vertexs.append(v)
+        return len(self.vertexs) - 1
+
+    def add_edges(self, i, j, w, revw):
+        a = len(self.edges)
+
+        fromI = Edge()
+        fromI.dst = j
+        fromI.next = self.vertexs[i].first
+        fromI.weight = w
+        self.vertexs[i].first = a
+        self.edges.append(fromI)
+
+        toI = Edge()
+        toI.dst = i
+        toI.next = self.vertexs[j].first
+        toI.weight = revw
+        self.vertexs[j].first = a + 1
+        self.edges.append(toI)
+
+    def add_term_weights(self, i, source_weight, sink_weight):
+        dw = self.vertexs[i].weight
+        if dw > 0:
+            source_weight += dw
+        else:
+            sink_weight -= dw
+        if source_weight < sink_weight:
+            self.flow += source_weight
+        else:
+            self.flow += sink_weight
+        self.vertexs[i].weight = source_weight - sink_weight
+
+    def max_flow(self):
+        TERMINAL = -1
+        ORPHAN = -2
+        stub = Vertex()
+        nilNode = Pointer(stub)
+        first = Pointer(stub)
+        last = Pointer(stub)
+        curr_ts = 0
+        stub.next = nilNode.get_value()
+        orphans = []
+
+        for i in range(len(self.vertexs)):
+            v = self.vertexs[i]
+            v.ts = 0
+            if v.weight != 0:
+                last.get_value().next = v
+                last.id = id(v)
+                v.dist = 1
+                v.parent = TERMINAL
+                v.t = v.weight < 0
+            else:
+                v.parent = 0
+
+        first.id = id(first.get_value().next)
+        last.get_value().next = nilNode.get_value()
+        nilNode.get_value().next = 0
+        while True:
+            e0 = -1
+            while first.get_value() != nilNode.get_value():
+                v = first.get_value()
+                if v.parent:
+                    vt = v.t
+                    ei = v.first
+                    while ei != 0:
+                        if self.edges[ei ^ vt].weight == 0:
+                            ei = self.edges[ei].next
+                            continue
+                        u = self.vertexs[self.edges[ei].dst]
+                        if not u.parent:
+                            u.t = vt
+                            u.parent = ei ^ 1
+                            u.ts = v.ts
+                            u.dist = v.dist + 1
+                            if not u.next:
+                                u.next = nilNode.get_value()
+                                last.get_value().next = u
+                                last.id = id(u)
+                            ei = self.edges[ei].next
+                            continue
+                        if u.t != vt:
+                            e0 = ei ^ vt
+                            break
+                        if u.dist > v.dist + 1 and u.ts <= v.ts:
+                            u.parent = ei ^ 1
+                            u.ts = v.ts
+                            u.dist = v.dist + 1
+                        ei = self.edges[ei].next
+                    if e0 > 0:
+                        break
+                first.id = id(first.get_value().next)
+                v.next = 0
+            if e0 <= 0:
+                break
+
+            minWeight = self.edges[e0].weight
+            for k in range(1, -1, -1):
+                v = self.vertexs[self.edges[e0 ^ k].dst]
+                while True:
+                    ei = v.parent
+                    if ei < 0:
+                        break
+                    weight = self.edges[ei ^ k].weight
+                    minWeight = min(minWeight, weight)
+                    v = self.vertexs[self.edges[ei].dst]
+                weight = abs(v.weight)
+                minWeight = min(minWeight, weight)
+
+            self.edges[e0].weight -= minWeight
+            self.edges[e0 ^ 1].weight += minWeight
+            self.flow += minWeight
+
+            for k in range(1, -1, -1):
+                v = self.vertexs[self.edges[e0 ^ k].dst]
+                while True:
+                    ei = v.parent
+                    if ei < 0:
+                        break
+                    self.edges[ei ^ (k ^ 1)].weight += minWeight
+                    self.edges[ei ^ k].weight -= minWeight
+                    if self.edges[ei ^ k].weight == 0:
+                        orphans.append(v)
+                        v.parent = ORPHAN
+                    v = self.vertexs[self.edges[ei].dst]
+                v.weight = v.weight + minWeight * (1 - k * 2)
+                if v.weight == 0:
+                    orphans.append(v)
+                    v.parent = ORPHAN
+            curr_ts += 1
+
+            while len(orphans) != 0:
+                v2 = orphans.pop()
+                minDist = float('inf')
+                e0 = 0
+                vt = v2.t
+
+                ei = v2.first
+                bcount = 0
+                while ei != 0:
+                    bcount += 1
+                    if self.edges[ei ^ (vt ^ 1)].weight == 0:
+                        ei = self.edges[ei].next
+                        continue
+                    u = self.vertexs[self.edges[ei].dst]
+                    if u.t != vt or u.parent == 0:
+                        ei = self.edges[ei].next
+                        continue
+
+                    d = 0
+                    while True:
+                        if u.ts == curr_ts:
+                            d += u.dist
+                            break
+                        ej = u.parent
+                        d += 1
+                        # print(d)
+                        if ej < 0:
+                            if ej == ORPHAN:
+                                d = float('inf') - 1
+                            else:
+                                u.ts = curr_ts
+                                u.dist = 1
+                            break
+                        u = self.vertexs[self.edges[ej].dst]
+                    d += 1
+                    if d < float("inf"):
+                        if d < minDist:
+                            minDist = d
+                            e0 = ei
+                        u = self.vertexs[self.edges[ei].dst]
+                        while u.ts != curr_ts:
+                            u.ts = curr_ts
+                            d -= 1
+                            u.dist = d
+                            u = self.vertexs[self.edges[u.parent].dst]
+
+                    ei = self.edges[ei].next
+                v2.parent = e0
+                if v2.parent > 0:
+                    v2.ts = curr_ts
+                    v2.dist = minDist
+                    continue
+
+                v2.ts = 0
+                ei = v2.first
+                while ei != 0:
+                    u = self.vertexs[self.edges[ei].dst]
+                    ej = u.parent
+                    if u.t != vt or (not ej):
+                        ei = self.edges[ei].next
+                        continue
+                    if self.edges[ei ^ (vt ^ 1)].weight and (not u.next):
+                        u.next = nilNode.get_value()
+                        last.get_value().next = u
+                        last.id = id(u)
+                    if ej > 0 and self.vertexs[self.edges[ej].dst] == v2:
+                        orphans.append(u)
+                        u.parent = ORPHAN
+                    ei = self.edges[ei].next
+        return self.flow
+
+    def _init_active_set(self):
+        for i in range(self.vertex_count):
+            v = self.vertexs[i]
+            v.ts = 0
+            if v.weight == 0:
+                v.parent = -3
+            else:
+                self.last.next = v
+                self.last = v
+                v.parent = self.terminal
+                v.t = v.weight < 0
+                self.dist = 1
+        self.first = self.first.next
+        self.last.next = self.nilNode
+        self.nilNode.next = 0
+
+    def search(self):
+        e0 = -3
+        while self.first != self.nilNode:
+            v = self.first
+            ei = v.first
+            while ei != -3:
+                if self.edges[ei ^ v.t] == 0:
+                    ei = self.edges[ei].next
+                    continue
+                u = self.vertexs[self.edges[ei].dst]
+                if u.parent == -3:
+                    u.t = v.t
+                    u.dist = v.dist + 1
+                    u.parent = ei ^ 1
+                    u.ts = v.ts
+                    if u.next == 0:
+                        u.next = self.nilNode
+                        self.last.next = u
+                        self.last = u
+                if u.t != v.t:
+                    e0 = ei ^ v.t
+                    break
+                if u.dist > v.dist + 1 and u.ts <= v.ts:
+                    u.parent = ei ^ 1
+                    u.ts = v.ts
+                    u.dist = v.dist + 1
+                ei = self.edges[ei].next
+            if e0 >=0:
+                break
+            self.first=self.first.next
+            v.next=0
+        return e0
+
+    def augment(self, e0):
+        minweight = self.edges[e0].weight
+        for k in [1, 0]:
+            v = self.vertexs[self.edges[e0 ^ k].dst]
+            while True:
+                ei = v.parent
+                if ei < 0:
+                    break
+                minweight = min(minweight, self.edges[ei ^ k].weight)
+                v = self.vertexs[self.edges[ei].dst]
+            minweight = min(minweight, abs(v.weight))
+
+        self.edges[e0].weight -= minweight
+        self.edges[e0 ^ 1].weight += minweight
+        self.flow += minweight
+        for k in [1, 0]:
+            v = self.vertexs[self.edges[e0 ^ k].dst]
+            while True:
+                ei = v.parent
+                if ei < 0:
+                    break
+                self.edges[ei ^ k].weight -= minweight
+                self.edges[ei ^ k ^ 1].weight += minweight
+                if self.edges[ei ^ k].weight == 0:
+                    self.orphans.append(v)
+                    v.parent = self.orphan
+                v = self.vertexs[self.edges[ei].dst]
+            v.weight += minweight * (1 - 2 * k)
+            if v.weight == 0:
+                self.orphans.append(v)
+                v.parent = self.orphan
+
+    def adoption(self):
+        while len(self.orphans) != 0:
+            v=self.orphans.pop()
+            e0=-3
+            ei=v.first
+            mindist=float('inf')
+            while ei!=-3:
+                u=self.vertexs[self.edges[ei].dst]
+                if self.edges[ei^1^v.t].weight==0 or u.t!=v.t or u.parent==-3:
+                    ei=self.edges[ei].next
+                    continue
+                d=1
+                while True:
+                    if u.ts==self.curr_ts:
+                        d+=u.dist
+                        break
+                    ej=u.parent
+                    d+=1
+                    if ej<0:
+                        if ej==self.orphan or ej==-3:
+                            d=float('inf')
+                        else:
+                            u.dist=1
+                            u.ts=self.curr_ts
+                        break
+                    u=self.vertexs[self.edges[ej].dst]
+                if d<float('inf'):
+                    if d<mindist:
+                        mindist=d
+                        e0=ei
+                    while u.ts!=self.curr_ts:
+                        d-=1
+                        u.ts=self.curr_ts
+                        u.dist=d
+                        u=self.vertexs[self.edges[u.parent].dst]
+                ei= self.edges[ei].next
+
+            v.parent = e0
+            if v.parent > 0:
+                v.ts = self.curr_ts
+                v.dist = mindist
+                continue
+
+            v.ts=0
+            ei=v.first
+            while ei!=-3:
+                u=self.vertexs[self.edges[ei].dst]
+                ej=u.parent
+                if ej==-3 or u.t!=v.t:
+                    ei=self.edges[ei].next
+                    continue
+                if u.next==0 and self.edges[ei^v.t^1].weight>0:
+                    u.next=self.nilNode
+                    self.last.next=u
+                    self.last=u
+                if ej >= 0 and self.vertexs[self.edges[ej].dst] == v:
+                    self.orphans.append(u)
+                    u.parent =self.orphan
+                ei = self.edges[ei].next
+
+    def insource_segment(self, i):
+        return self.vertexs[i].t == 0
 
 class GCEngine:
     def __init__(self, img):
-        self.img = img.astype(np.float)
+        self.img = img.astype(np.double)
         self.img_shape = img.shape
         self.row = self.img_shape[0]
         self.col = self.img_shape[1]
@@ -135,9 +512,7 @@ class GCEngine:
         self.mask = np.zeros((self.row, self.col), dtype=np.uint8)
         self.alpha = np.zeros((self.row, self.col), dtype=np.uint8)
 
-        self.g = graph(0)
-
-        self.max_iter = 1
+        self.max_iter = 2
 
     def OriginalIterate(self, p1, p2):
         x1, y1, x2, y2 = p1[0], p1[1], p2[0], p2[1]
@@ -146,7 +521,7 @@ class GCEngine:
         for i in range(self.max_iter):
             self.assign_GMM_component()
             self.learn_GMM_parameters()
-            self.construct_graph()
+            self.construct_gcgraph()
             self.estimate_segmentation()
 
         return self.alpha
@@ -164,7 +539,7 @@ class GCEngine:
         return np.zeros(self.img_shape, np.uint8)
 
     def _init_V(self):
-        self.gamma = 50
+        self.gamma = 30
         self.cal_beta()
         self.cal_nearby_W()
 
@@ -203,8 +578,8 @@ class GCEngine:
         FG_index = np.logical_or(self.mask == self.defi_FG, self.mask == self.prob_FG)
         BG_pixels = self.img[BG_index]
         FG_pixels = self.img[FG_index]
-        BG_KM = kmeans(BG_pixels, 3, self.k, 20)
-        FG_KM = kmeans(FG_pixels, 3, self.k, 20)
+        BG_KM = kmeans(BG_pixels, 3, self.k, 10)
+        FG_KM = kmeans(FG_pixels, 3, self.k, 10)
         BG_KM.run()
         FG_KM.run()
         BG_by_component = BG_KM.output()
@@ -244,122 +619,50 @@ class GCEngine:
         self.BG_GMM.clear()
         self.FG_GMM.clear()
 
-    def construct_graph(self):
-        self.g = graph(self.row * self.col + 2)
+    def construct_gcgraph(self, lam=450):
+        vertex_count = self.col * self.row
+        edge_count = 2 * (4 * vertex_count - 3 * (self.row + self.col) + 2)
+        self.graph = GCGraph(vertex_count, edge_count)
         self.b = np.zeros((self.row, self.col))
         self.f = np.zeros((self.row, self.col))
-        for i in range(self.row):
-            for j in range(self.col):
-                a = i * self.col + j + 1
-                t = self.row * self.col + 1
-                w1 = -np.log(self.BG_GMM.prob_pixel_GMM(self.img[i, j])).astype(np.int16)
-                self.b[i, j] = w1
-                self.g.addedge(0, a, w1)
-                self.g.addedge(a, 0, 0)
-                w2 = -np.log(self.FG_GMM.prob_pixel_GMM(self.img[i, j])).astype(np.int16)
-                self.f[i, j] = w2
-                self.g.addedge(a, t, w2)
-                self.g.addedge(t, a, 0)
-                if j >= 1:
-                    b = i * self.col + j
-                    self.g.addedge(a, b, self.left_W[i, j].astype(np.int8))
-                    self.g.addedge(b, a, self.left_W[i, j].astype(np.int8))
-                if i >= 1 and j >= 1:
-                    b = (i - 1) * self.col + j
-                    self.g.addedge(a, b, self.upleft_W[i, j].astype(np.int8))
-                    self.g.addedge(b, a, self.upleft_W[i, j].astype(np.int8))
-                if i >= 1:
-                    b = (i - 1) * self.col + j + 1
-                    self.g.addedge(a, b, self.up_W[i, j].astype(np.int8))
-                    self.g.addedge(b, a, self.up_W[i, j].astype(np.int8))
-                if i >= 1 and j < self.col - 1:
-                    b = (i - 1) * self.col + j + 2
-                    self.g.addedge(a, b, self.upright_W[i, j].astype(np.int8))
-                    self.g.addedge(b, a, self.upright_W[i, j].astype(np.int8))
+        for y in range(self.row):
+            for x in range(self.col):
+                vertex_index = self.graph.add_vertex()
+                color = self.img[y, x]
+                if self.mask[y, x] == self.prob_BG or self.mask[y, x] == self.prob_FG:
+                    fromSource = -np.log(self.BG_GMM.prob_pixel_GMM(color))
+                    toSink = -np.log(self.FG_GMM.prob_pixel_GMM(color))
+                elif self.mask[y, x] == self.defi_BG:
+                    fromSource = 0
+                    toSink = lam
+                else:
+                    fromSource = lam
+                    toSink = 0
+                self.b[y, x] = fromSource
+                self.f[y, x] = toSink
+                self.graph.add_term_weights(vertex_index, fromSource, toSink)
+                if x > 0:
+                    w = self.left_W[y, x]
+                    self.graph.add_edges(vertex_index, vertex_index - 1, w, w)
+                if x > 0 and y > 0:
+                    w = self.upleft_W[y, x]
+                    self.graph.add_edges(vertex_index, vertex_index - self.col - 1, w, w)
+                if y > 0:
+                    w = self.up_W[y, x]
+                    self.graph.add_edges(vertex_index, vertex_index - self.col, w, w)
+                if x < self.col - 1 and y > 0:
+                    w = self.upright_W[y, x]
+                    self.graph.add_edges(vertex_index, vertex_index - self.col + 1, w, w)
 
     def estimate_segmentation(self):
-        self.g.dinic()
-        e = self.g.head[0]
-        while e != -1:
-            t = self.g.edges[e].to
-            i = (t - 1) // self.col
-            j = (t - 1) % self.col
-            if self.g.edges[e].w <= 0:
-                if self.mask[i, j] == self.prob_FG:
-                    self.mask[i, j] = self.prob_BG
-            else:
-                if self.mask[i, j] == self.prob_BG:
-                    self.mask[i, j] = self.prob_FG
-            e = self.g.edges[e].nex
-        self.alpha = np.zeros(self.img_shape)
+        a = self.graph.max_flow()
+        for y in range(self.row):
+            for x in range(self.col):
+                if self.mask[y, x] == self.prob_BG or self.mask[y, x] == self.prob_FG:
+                    if self.graph.insource_segment(y * self.col + x):  # Vertex Index
+                        self.mask[y, x] = self.prob_FG
+                    else:
+                        self.mask[y, x] = self.prob_BG
+        self.alpha = np.zeros((self.row, self.col))
         FG_index = np.logical_or(self.mask == self.prob_FG, self.mask == self.defi_FG)
         self.alpha[FG_index] = 1
-
-
-class edge:
-    def __init__(self, a, b, c):
-        self.to = a
-        self.w = b
-        self.nex = c
-
-
-class graph:
-    def __init__(self, vertex_num):
-        self.head = [-1 for i in range(vertex_num)]
-        self.dis = [-1 for i in range(vertex_num)]
-        self.cur = [0 for i in range(vertex_num)]
-        self.edges = []
-        self.n = vertex_num
-        self.flow = 0
-        self.m = 0
-
-    def addedge(self, source, destination, weight):
-        e = edge(destination, weight, self.head[source])
-        self.head[source] = self.m
-        self.m += 1
-        self.edges.append(e)
-
-    def bfs(self):
-        self.dis = [-1 for i in range(self.n)]
-        self.dis[0] = 0
-        q = queue.Queue()
-        q.put(0)
-        while (not q.empty()) and self.dis[self.n - 1] == -1:
-            u = q.get()
-            c_e = self.head[u]
-            while c_e != -1:
-                _to = self.edges[c_e].to
-                if self.dis[_to] == -1 and self.edges[c_e].w > 0:
-                    self.dis[_to] = self.dis[u] + 1
-                    q.put(_to)
-                c_e = self.edges[c_e].nex
-        return self.dis[self.n - 1] != -1
-
-    def dfs(self, u, limit):
-        if u == self.n - 1:
-            return limit
-        flow1 = 0
-        c_e = self.cur[u]
-        while c_e != -1 and limit > 0:
-            _to = self.edges[c_e].to
-            if self.dis[_to] == self.dis[u] + 1 and self.edges[c_e].w > 0 and limit > 0:
-                flow2 = self.dfs(_to, min(limit, self.edges[c_e].w))
-                flow1 += flow2
-                self.edges[c_e].w -= flow2
-                self.edges[c_e ^ 1].w += flow2
-                if self.edges[c_e].w > 0:
-                    self.cur[u] = c_e
-                limit -= flow2
-            c_e = self.edges[c_e].nex
-        if flow1 == 0:
-            self.dis[u] = -1
-        return flow1
-
-    # 默认第一个点是源点，最后一个点是汇点
-    def dinic(self):
-        self.flow = 0
-        cnt = 0
-        while self.bfs():
-            self.cur = self.head.copy()
-            self.flow += self.dfs(0, 100000000000000)
-        return self.flow
