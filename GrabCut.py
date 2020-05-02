@@ -527,16 +527,19 @@ class GCEngine:
         return self.alpha
 
     def add_foreground(self, pixels):
-        # to be implemented
+        self.mask[pixels] = self.defi_FG
         return
 
     def add_background(self, pixels):
-        # to be implemented
+        self.mask[pixels] = self.defi_BG
         return
 
     def rerun(self):
-        # to be implemented
-        return np.zeros(self.img_shape, np.uint8)
+        self.assign_GMM_component()
+        self.learn_GMM_parameters()
+        self.construct_gcgraph()
+        self.estimate_segmentation()
+        return self.alpha
 
     def _init_V(self):
         self.gamma = 30
