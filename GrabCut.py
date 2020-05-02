@@ -541,6 +541,18 @@ class GCEngine:
         self.estimate_segmentation()
         return self.alpha
 
+    def run(self,trimap):
+        self.mask[trimap==0]=self.defi_BG
+        self.mask[trimap==1]=self.prob_FG
+        self.mask[trimap==2]=self.defi_FG
+        self.init_with_kmeans()
+        for i in range(self.max_iter):
+            self.assign_GMM_component()
+            self.learn_GMM_parameters()
+            self.construct_gcgraph()
+            self.estimate_segmentation()
+        return self.alpha
+
     def _init_V(self):
         self.gamma = 30
         self.cal_beta()

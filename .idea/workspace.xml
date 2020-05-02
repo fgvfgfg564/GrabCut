@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b262c5d9-1398-4c55-86f5-3b3bb181a2e1" name="Default Changelist" comment="" />
+    <list default="true" id="b262c5d9-1398-4c55-86f5-3b3bb181a2e1" name="Default Changelist" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/GrabCut.py" beforeDir="false" afterPath="$PROJECT_DIR$/GrabCut.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -28,9 +31,9 @@
     <servers />
   </component>
   <component name="WindowStateProjectService">
-    <state x="23" y="167" key="com.intellij.ide.util.TipDialog" timestamp="1587949720397">
+    <state x="23" y="167" key="com.intellij.ide.util.TipDialog" timestamp="1588400378557">
       <screen x="0" y="0" width="1280" height="680" />
     </state>
-    <state x="23" y="167" key="com.intellij.ide.util.TipDialog/0.0.1280.680@0.0.1280.680" timestamp="1587949720397" />
+    <state x="23" y="167" key="com.intellij.ide.util.TipDialog/0.0.1280.680@0.0.1280.680" timestamp="1588400378557" />
   </component>
 </project>
