@@ -74,6 +74,7 @@ class ImageProcessor:
                         sp = (max(self.first_point[0], self.second_point[0]),
                               max(self.first_point[1], self.second_point[1]))
                         self.mask = self.engine.OriginalIterate(fp, sp)
+                        self.mask = np.expand_dims(self.mask, 2).repeat(3, axis=2)
                         return
 
     def line_drawer(self, event, x, y, flags, param):
@@ -88,7 +89,6 @@ class ImageProcessor:
                 cv2.circle(self.b, (x, y), 5, 1, -1)
 
     def modify(self):
-        print(self.mask)
         self.masked_image = np.where(self.mask, self.image, self.image // 4 * 2 + self.bottom_image // 4 * 2)
         self.new_image = self.masked_image.copy()
         self.f = np.zeros(self.image.shape[:2], np.uint8)
@@ -103,6 +103,7 @@ class ImageProcessor:
                 self.engine.add_foreground(self.f)
                 self.engine.add_background(self.b)
                 self.mask = self.engine.rerun()
+                self.mask = np.expand_dims(self.mask, 2).repeat(3, axis=2)
                 self.masked_image = np.where(self.mask, self.image, self.image // 4 * 3 + self.bottom_image // 4)
                 self.new_image = self.masked_image.copy()
                 self.f = np.zeros(self.image.shape[:2], np.uint8)

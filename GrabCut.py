@@ -103,6 +103,7 @@ class GMM:
         self.pixel_count[:] = 0
         self.pixel_total_count = 0
 
+
 class Pointer:
     def __init__(self, var):
         self.id = id(var)
@@ -384,10 +385,10 @@ class GCGraph:
                     u.ts = v.ts
                     u.dist = v.dist + 1
                 ei = self.edges[ei].next
-            if e0 >=0:
+            if e0 >= 0:
                 break
-            self.first=self.first.next
-            v.next=0
+            self.first = self.first.next
+            v.next = 0
         return e0
 
     def augment(self, e0):
@@ -424,40 +425,40 @@ class GCGraph:
 
     def adoption(self):
         while len(self.orphans) != 0:
-            v=self.orphans.pop()
-            e0=-3
-            ei=v.first
-            mindist=float('inf')
-            while ei!=-3:
-                u=self.vertexs[self.edges[ei].dst]
-                if self.edges[ei^1^v.t].weight==0 or u.t!=v.t or u.parent==-3:
-                    ei=self.edges[ei].next
+            v = self.orphans.pop()
+            e0 = -3
+            ei = v.first
+            mindist = float('inf')
+            while ei != -3:
+                u = self.vertexs[self.edges[ei].dst]
+                if self.edges[ei ^ 1 ^ v.t].weight == 0 or u.t != v.t or u.parent == -3:
+                    ei = self.edges[ei].next
                     continue
-                d=1
+                d = 1
                 while True:
-                    if u.ts==self.curr_ts:
-                        d+=u.dist
+                    if u.ts == self.curr_ts:
+                        d += u.dist
                         break
-                    ej=u.parent
-                    d+=1
-                    if ej<0:
-                        if ej==self.orphan or ej==-3:
-                            d=float('inf')
+                    ej = u.parent
+                    d += 1
+                    if ej < 0:
+                        if ej == self.orphan or ej == -3:
+                            d = float('inf')
                         else:
-                            u.dist=1
-                            u.ts=self.curr_ts
+                            u.dist = 1
+                            u.ts = self.curr_ts
                         break
-                    u=self.vertexs[self.edges[ej].dst]
-                if d<float('inf'):
-                    if d<mindist:
-                        mindist=d
-                        e0=ei
-                    while u.ts!=self.curr_ts:
-                        d-=1
-                        u.ts=self.curr_ts
-                        u.dist=d
-                        u=self.vertexs[self.edges[u.parent].dst]
-                ei= self.edges[ei].next
+                    u = self.vertexs[self.edges[ej].dst]
+                if d < float('inf'):
+                    if d < mindist:
+                        mindist = d
+                        e0 = ei
+                    while u.ts != self.curr_ts:
+                        d -= 1
+                        u.ts = self.curr_ts
+                        u.dist = d
+                        u = self.vertexs[self.edges[u.parent].dst]
+                ei = self.edges[ei].next
 
             v.parent = e0
             if v.parent > 0:
@@ -465,25 +466,26 @@ class GCGraph:
                 v.dist = mindist
                 continue
 
-            v.ts=0
-            ei=v.first
-            while ei!=-3:
-                u=self.vertexs[self.edges[ei].dst]
-                ej=u.parent
-                if ej==-3 or u.t!=v.t:
-                    ei=self.edges[ei].next
+            v.ts = 0
+            ei = v.first
+            while ei != -3:
+                u = self.vertexs[self.edges[ei].dst]
+                ej = u.parent
+                if ej == -3 or u.t != v.t:
+                    ei = self.edges[ei].next
                     continue
-                if u.next==0 and self.edges[ei^v.t^1].weight>0:
-                    u.next=self.nilNode
-                    self.last.next=u
-                    self.last=u
+                if u.next == 0 and self.edges[ei ^ v.t ^ 1].weight > 0:
+                    u.next = self.nilNode
+                    self.last.next = u
+                    self.last = u
                 if ej >= 0 and self.vertexs[self.edges[ej].dst] == v:
                     self.orphans.append(u)
-                    u.parent =self.orphan
+                    u.parent = self.orphan
                 ei = self.edges[ei].next
 
     def insource_segment(self, i):
         return self.vertexs[i].t == 0
+
 
 class GCEngine:
     def __init__(self, img):
@@ -541,10 +543,10 @@ class GCEngine:
         self.estimate_segmentation()
         return self.alpha
 
-    def run(self,trimap):
-        self.mask[trimap==0]=self.defi_BG
-        self.mask[trimap==1]=self.prob_FG
-        self.mask[trimap==2]=self.defi_FG
+    def run(self, trimap):
+        self.mask[trimap == 0] = self.defi_BG
+        self.mask[trimap == 1] = self.prob_FG
+        self.mask[trimap == 2] = self.defi_FG
         self.init_with_kmeans()
         for i in range(self.max_iter):
             self.assign_GMM_component()
