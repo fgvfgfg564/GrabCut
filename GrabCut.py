@@ -529,11 +529,11 @@ class GCEngine:
         return self.alpha
 
     def add_foreground(self, pixels):
-        self.mask[pixels] = self.defi_FG
+        self.mask[pixels == 1] = self.defi_FG
         return
 
     def add_background(self, pixels):
-        self.mask[pixels] = self.defi_BG
+        self.mask[pixels == 1] = self.defi_BG
         return
 
     def rerun(self):
@@ -647,8 +647,8 @@ class GCEngine:
                 vertex_index = self.graph.add_vertex()
                 color = self.img[y, x]
                 if self.mask[y, x] == self.prob_BG or self.mask[y, x] == self.prob_FG:
-                    fromSource = -np.log(self.BG_GMM.prob_pixel_GMM(color))
-                    toSink = -np.log(self.FG_GMM.prob_pixel_GMM(color))
+                    fromSource = -np.log(self.BG_GMM.prob_pixel_GMM(color)+0.0001)
+                    toSink = -np.log(self.FG_GMM.prob_pixel_GMM(color)+0.0001)
                 elif self.mask[y, x] == self.defi_BG:
                     fromSource = 0
                     toSink = lam

@@ -6,6 +6,7 @@ import sys
 import os
 import numpy as np
 from GrabCut import *
+from cv2API import CV2API
 
 
 def do_nothing(event, x, y, flags, param):
@@ -13,7 +14,7 @@ def do_nothing(event, x, y, flags, param):
 
 
 class ImageProcessor:
-    def __init__(self, image):
+    def __init__(self, image, Engine):
         self.first_point_drawn = False
         self.second_point_drawn = False
         self.first_point = (0, 0)
@@ -24,17 +25,20 @@ class ImageProcessor:
         self.new_image = image.copy()
         self.mask = np.ones(image.shape, np.uint8)
         self.bottom_image = np.ndarray(image.shape, np.uint8)
-        self.engine = GCEngine(image)
+        self.engine = Engine(image)
 
         for i in range(self.bottom_image.shape[0]):
             for j in range(self.bottom_image.shape[1]):
                 col = (i // 10 + j // 10) & 1
-                col *= 255
+                col *= 64
+                col = 255 - col
                 self.bottom_image[i][j][0] = col
                 self.bottom_image[i][j][1] = col
                 self.bottom_image[i][j][2] = col
 
     def checker(self, event, x, y, flags, param):
+        x = max(0, min(self.image.shape[1], x))
+        y = max(0, min(self.image.shape[0], y))
         if self.second_point_drawn:
             return
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -49,7 +53,7 @@ class ImageProcessor:
             cv2.rectangle(self.new_image, self.first_point, self.mouse_point, (255, 0, 0), 2)
 
     def reset(self):
-        self.__init__(self.image)
+        self.__init__(self.image, self.engine)
 
     def original_iteration(self):
         print("drag left mouse button and draw a rectangle to cover your target object")
@@ -69,10 +73,11 @@ class ImageProcessor:
                         break
                     elif k == ord('y'):
                         cv2.setMouseCallback('input', do_nothing)
-                        fp = (min(self.first_point[0], self.second_point[0]),
-                              min(self.first_point[1], self.second_point[1]))
-                        sp = (max(self.first_point[0], self.second_point[0]),
-                              max(self.first_point[1], self.second_point[1]))
+                        fp = (min(self.first_point[1], self.second_point[1]),
+                              min(self.first_point[0], self.second_point[0]))
+                        sp = (max(self.first_point[1], self.second_point[1]),
+                              max(self.first_point[0], self.second_point[0]))
+                        print(fp,sp)
                         self.mask = self.engine.OriginalIterate(fp, sp)
                         self.mask = np.expand_dims(self.mask, 2).repeat(3, axis=2)
                         return
@@ -128,7 +133,7 @@ def main():
     except AttributeError:
         raise ImportError("Not a valid image")
 
-    ip = ImageProcessor(image)
+    ip = ImageProcessor(image, GCEngine)
     ip.original_iteration()
     print("Press F to mark foreground pixel, B to mark background pixel")
     print("Press R to rerun model, Press X to save and quit")
